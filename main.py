@@ -1,5 +1,6 @@
 import requests
 import pandas as pd
+import numpy as np
 import ta
 import time
 import _thread
@@ -63,6 +64,26 @@ def send_discord_message(webhook_url, message):
     response = requests.post(webhook_url, json=data)
     return response
 
+def send_message_notify(message):
+
+    telegram_token = "6519297911:AAH-cGmGvF6wh0Gb-55sBBhB0Hi8W6j3U0c"
+    chat_id = "1188913547"
+    discord_webhook_url = "https://discord.com/api/webhooks/1242331878053253142/uK3gJYARjx_Js8zN0n5LZa7vXzSziQGDGxGVxyYX-QDMZUUbGXeQjHGi9zoD9OUTnhP6"
+
+    #tg
+    url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
+    data = {
+        "chat_id": chat_id,
+        "text": message
+    }
+    response = requests.post(url, data=data)
+    #ds
+    data = {
+        "content": message
+    }
+    response2 = requests.post(discord_webhook_url, json=data)
+
+
 def check_and_notify(symbol , df_15, df_4h, id, token, discordUrl):
     sendable = True
     latest_data_4h = df_4h.iloc[-2]
@@ -70,6 +91,10 @@ def check_and_notify(symbol , df_15, df_4h, id, token, discordUrl):
     sma_30 = latest_data_4h['sma_30']
     sma_60 = latest_data_4h['sma_60']
     sma_90 = latest_data_4h['sma_90']
+
+    sma_30_15m = latest_data_15['sma_30']
+    sma_45_15m = latest_data_15['sma_45']
+    sma_60_15m = latest_data_15['sma_60']
 
     vol_sma_45 = latest_data_15['vol_sma_45']
     vol = float(latest_data_15['volume'])
@@ -96,18 +121,79 @@ def check_and_notify(symbol , df_15, df_4h, id, token, discordUrl):
             print(symbol + " 15m 插針, " + str(open - low) + ", " + str((open - close) * 5))
     else:
         sendable = False
-        '''message = f"{symbol} : 多頭且插針"
-            print(symbol + "多頭且插針")
-            response_tg = send_telegram_message(id,message, token)
-            response_dis = send_discord_message(discordUrl,message)
-            print('tg status code :' + str(response_tg.status_code))
-            print('dis status code :' + str(response_dis.status_code))'''    
 
     if sendable:
         print(symbol + " alert!!!")
         message = f"{symbol} : 15m 爆量、插針、4h 多頭"
         response_tg = send_telegram_message(id,message, token)
         response_dis = send_discord_message(discordUrl,message)
+
+
+    if sma_30_15m > sma_45_15m and sma_45_15m > sma_60_15m:
+        if close < open :
+            if (close - low) * 2 > (open - low):
+                message = f"{symbol} : 15m 多頭趨勢，紅插針"
+                send_telegram_message(id,message, token)
+        else :
+            if (open - low) * 2 > (close - low):
+                message = f"{symbol} : 15m 多頭趨勢，綠插針"
+                send_telegram_message(id,message, token)
+
+def get_bigger_alert(symbol, df_15):
+        
+    #市場突然出現劇烈波動 => 價差超過前15根平均
+    start_num = 3
+    div_num = 15
+    last_prices = df_15.iloc[- start_num + div_num: - start_num]
+    high_low_diff = last_prices['high'] - last_prices['low']
+    avg = high_low_diff.mean()
+    print(symbol + "平均波動:" + str(avg))
+    current_price = df_15.iloc[-2]
+    high_low = current_price['high'] - current_price['low']
+
+    if high_low > avg * 4 :
+        print(symbol + "出現大波動")
+
+def calculate_atr_ema(symbol, df, period=12):
+    """
+    計算 ATR (Average True Range) 並使用 EMA 平滑
+    :param df: 包含 high, low, close 的 DataFrame
+    :param period: 計算 ATR 的窗口大小
+    :return: DataFrame，新增 'TR', 'ATR', 和 'ATR_EMA' 欄位
+    """
+    # 計算真實範圍 (TR)
+    df['previous_close'] = df['close'].shift(1)  # 上一根收盤價
+    df['tr'] = df[['high', 'low']].apply(lambda x: x['high'] - x['low'], axis=1)
+    df['tr'] = df.apply(
+        lambda row: max(row['tr'], abs(row['high'] - row['previous_close']), abs(row['low'] - row['previous_close'])),
+        axis=1
+    )
+    
+    # 計算簡單 ATR
+    df['atr'] = df['tr'].rolling(window=period).mean()
+    
+    # 計算 ATR 的 EMA
+    alpha = 2 / (period + 1)  # 平滑係數
+    df['atr_ema'] = df['tr'].ewm(span=period, adjust=False).mean()
+
+    # 移除多餘欄位
+    df.drop(columns=['previous_close'], inplace=True)
+    current_price = df.iloc[-2]
+    #print(symbol + "當前價格：" + str(current_price['open']) + ", atr: " + str(current_price['atr_ema'])) 
+    message = ""
+
+    if current_price['close'] > (current_price['open'] + float(current_price['atr_ema']) * 2):
+        message = f"{symbol} : 大波動突破"
+        send_message_notify(message)
+        print(symbol + "大波動突破")
+
+    if current_price['close'] < (current_price['open'] - float(current_price['atr_ema']) * 2):
+        message = f"{symbol} : 大波動跌破"
+        
+        print(symbol + "大波動跌破")
+
+    if message != "":
+        send_message_notify(message)
 
 def check_sma_long(symbol , df_4h):
     pass_ = True
@@ -150,7 +236,10 @@ def check_vol_kline(symbol , df_15, isLong):
     open = float(latest_data_15['open'])
     high = float(latest_data_15['high'])
     low = float(latest_data_15['low'])
-    
+
+    #if isLong:
+    #    get_bigger_alert(symbol, df_15)
+
     if vol > vol_sma_45 * 5:
         pass_ = True
         #print(symbol +" 15m 爆量")
@@ -160,7 +249,7 @@ def check_vol_kline(symbol , df_15, isLong):
     if not pass_:
         return pass_
 
-    if isLong:
+    if isLong:        
         if close < open and open - low > (open - close) * 2 and close - low > (high - open) * 3: 
             print(symbol + " 15m 爆量 紅插針, (多)")
         elif open < close and open - low > (close - open) * 2 and open - low > (high - close) * 3:
@@ -228,12 +317,12 @@ all_contract_symbols = get_all_contract_symbols()
 #print(f"所有合約幣種: {all_contract_symbols}")
 #[0,5,10,15,20,25,30,35,40,45,50,55]:
 print("開始執行...")
-ans_1 = input("是否檢查最近漲跌？(y/n)")
+'''ans_1 = input("是否檢查最近漲跌？(y/n)")
 if ans_1 == "Y" or ans_1 == "y":
     check_recentLow()
 
 else:
-    print("開始重複執行K線提醒...")
+    print("開始重複執行K線提醒...")'''
 #Test('TNSRUSDT')
 dontTrackSymbol = ["USDCUSDT", "BTCSTUSDT"]
 while True:
@@ -251,8 +340,21 @@ while True:
                     'close_time', 'quote_asset_volume', 'number_of_trades', 
                     'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
                 ])
+
+                df_15['high'] = df_15['high'].astype(float)
+                df_15['low'] = df_15['low'].astype(float)
+                df_15['close'] = df_15['close'].astype(float)
+                df_15['open'] = df_15['open'].astype(float)
+
                 df_15['timestamp'] = pd.to_datetime(df_15['timestamp'], unit='ms')
+
+                calculate_atr_ema(symbol, df_15)
+
                 df_15 = calculate_volume_sma(df_15, 45)
+                df_15 = calculate_sma(df_15, 30)
+                df_15 = calculate_sma(df_15, 45)
+                df_15 = calculate_sma(df_15, 60)
+
                 send_long =  check_vol_kline(symbol, df_15, True)
                 send_short =  check_vol_kline(symbol, df_15, False)
 
