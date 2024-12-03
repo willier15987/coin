@@ -184,7 +184,6 @@ def calculate_atr_ema(symbol, df, period=12):
 
     if current_price['close'] > (current_price['open'] + float(current_price['atr_ema']) * 2):
         message = f"{symbol} : 大波動突破"
-        send_message_notify(message)
         print(symbol + "大波動突破")
 
     if current_price['close'] < (current_price['open'] - float(current_price['atr_ema']) * 2):
