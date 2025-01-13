@@ -140,5 +140,6 @@ for symbol in all_contract_symbols:
     else:
         print(symbol + "不符合")'''
 
+print("總共" + str(len(selected_symbols)))
 for s in selected_symbols:
     print(s + "符合條件")
