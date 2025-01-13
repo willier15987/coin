@@ -36,7 +36,7 @@ def get_binance_klines_with_rate_limit(symbol, interval, limit=500):
 
     return response.json()
 
-def data_transform(symbol, timeframe):
+def data_transform(symbol, timeframe, ma_short, ma_medium, ma_long):
     #print("執行單個時區")
     data = get_binance_klines_with_rate_limit(symbol, timeframe, 150)
     df = pd.DataFrame(data, columns=[
@@ -56,7 +56,7 @@ def data_transform(symbol, timeframe):
     if (df[f'sma_{ma_short}'].iloc[-1] > df[f'sma_{ma_medium}'].iloc[-1] > df[f'sma_{ma_long}'].iloc[-1]):
         selected_symbols.append(symbol)
 
-def data_transform_2(symbol, timeframe, timeframe_2):
+def data_transform_2(symbol, timeframe, timeframe_2, ma_short, ma_medium, ma_long):
     #print("執行兩個時區")
     data = get_binance_klines_with_rate_limit(symbol, timeframe, 150)
     df = pd.DataFrame(data, columns=[
@@ -101,44 +101,74 @@ def data_transform_2(symbol, timeframe, timeframe_2):
     if passMa1 and not passMa2:
         print(symbol + "未通過第二時區檢測")
 
-# 輸入參數並轉換為整數
-all_contract_symbols = get_all_contract_symbols()
-timeframe = input('輸入時間')  # 1小時K線
-next_time_frame = input('第二個時間')
-ma_short = int(input('最短周期'))
-ma_medium = int(input('中周期'))
-ma_long = int(input('最長周期'))
+def function_one():
+    timeframe = input('輸入時間')  # 1小時K線
+    next_time_frame = input('第二個時間')
+    ma_short = int(input('最短周期'))
+    ma_medium = int(input('中周期'))
+    ma_long = int(input('最長周期'))
 
-dontTrackSymbol = ["USDCUSDT", "BTCSTUSDT"]
-selected_symbols = []
+    dontTrackSymbol = ["USDCUSDT", "BTCSTUSDT"]    
 
-for symbol in all_contract_symbols:
-    if symbol in dontTrackSymbol:
-        continue
+    for symbol in all_contract_symbols:
+        if symbol in dontTrackSymbol:
+            continue
 
-    if next_time_frame == "0":
-        data_transform(symbol, timeframe)
-    else :
-        data_transform_2(symbol, timeframe, next_time_frame)
-    '''data = get_binance_klines_with_rate_limit(symbol, timeframe, 150)
-    df = pd.DataFrame(data, columns=[
+        if next_time_frame == "0":
+            data_transform(symbol, timeframe, ma_short, ma_medium, ma_long)
+        else :
+            data_transform_2(symbol, timeframe, next_time_frame, ma_short, ma_medium, ma_long)
+
+    for s in selected_symbols:
+        print(s + "符合條件")
+
+def function_two():
+    timeframe = input('輸入時間')  # 1小時K線
+    klineNumStart = input('輸入初始時間')
+    klineNumEnd = input('輸入結束時間')
+    killSearcher(all_contract_symbols, timeframe, klineNumStart, klineNumEnd)
+
+
+def killSearcher(all_contract_symbols, timeframe, klineNumStart, klineNumEnd):
+
+    is_close = input("收盤價 : Y ; 最低價 : N")
+
+    btcData = get_binance_klines_with_rate_limit("BTCUSDT", timeframe, 150)
+    btc_df = pd.DataFrame(btcData, columns=[
             'timestamp', 'open', 'high', 'low', 'close', 'volume', 
             'close_time', 'quote_asset_volume', 'number_of_trades', 
             'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
     ])
-    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-    df['close'] = df['close'].astype(float)  # 確保 close 欄位是浮點數型別
+    btc_df['timestamp'] = pd.to_datetime(btc_df['timestamp'], unit='ms')
+    btc_df['close'] = btc_df['close'].astype(float)  # 確保 close 欄位是浮點數型別
+    btc_df['low'] = btc_df['low'].astype(float)  # 確保 close 欄位是浮點數型別
 
-        # 計算均線
-    df = calculate_sma(df, ma_short)
-    df = calculate_sma(df, ma_medium)
-    df = calculate_sma(df, ma_long)
+    for symbol in all_contract_symbols:
+        
+        data = get_binance_klines_with_rate_limit(symbol, timeframe, 150)
+        df = pd.DataFrame(data, columns=[
+            'timestamp', 'open', 'high', 'low', 'close', 'volume', 
+            'close_time', 'quote_asset_volume', 'number_of_trades', 
+            'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
+        ])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df['close'] = df['close'].astype(float)  # 確保 close 欄位是浮點數型別
+        df['low'] = df['low'].astype(float)  # 確保 close 欄位是浮點數型別
 
-        # 檢查均線規則
-    if (df[f'sma_{ma_short}'].iloc[-1] > df[f'sma_{ma_medium}'].iloc[-1] > df[f'sma_{ma_long}'].iloc[-1]):
-        selected_symbols.append(symbol)
-    else:
-        print(symbol + "不符合")'''
+        if len(df) < int(klineNumStart) or len(df) < int(klineNumEnd):
+            continue
 
-for s in selected_symbols:
-    print(s + "符合條件")
+        if is_close == 'Y' or is_close == 'y':
+            if btc_df['close'].iloc[-int(klineNumStart)] < btc_df['close'].iloc[-int(klineNumEnd)] and df['close'].iloc[-int(klineNumStart)] > df['close'].iloc[-int(klineNumEnd)]:            
+                print(symbol + "跌幅小於大盤")
+        else:
+            if btc_df['low'].iloc[-int(klineNumStart)] < btc_df['low'].iloc[-int(klineNumEnd)] and df['low'].iloc[-int(klineNumStart)] > df['low'].iloc[-int(klineNumEnd)]:            
+                print(symbol + "跌幅小於大盤")
+# 輸入參數並轉換為整數
+all_contract_symbols = get_all_contract_symbols()
+selected_symbols = []
+functionInput = input('功能：1.趨勢檢測 2.下跌檢測')
+if functionInput == '1':
+    function_one()
+elif functionInput == '2':
+    function_two()
