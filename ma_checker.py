@@ -103,7 +103,7 @@ def data_transform_2(symbol, timeframe, timeframe_2, ma_short, ma_medium, ma_lon
 
 def function_one():
     timeframe = input('輸入時間')  # 1小時K線
-    next_time_frame = input('第二個時間')
+    next_time_frame = input('第二個時間(如果不要則輸入-1)')
     ma_short = int(input('最短周期'))
     ma_medium = int(input('中周期'))
     ma_long = int(input('最長周期'))
@@ -114,7 +114,7 @@ def function_one():
         if symbol in dontTrackSymbol:
             continue
 
-        if next_time_frame == "0":
+        if next_time_frame == "-1":
             data_transform(symbol, timeframe, ma_short, ma_medium, ma_long)
         else :
             data_transform_2(symbol, timeframe, next_time_frame, ma_short, ma_medium, ma_long)
