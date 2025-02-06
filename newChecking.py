@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import ta
 import time
-import _thread
+import threading
 from datetime import datetime
 
 import ta.trend
@@ -82,7 +82,6 @@ def send_message_notify(message):
         "content": message
     }
     response2 = requests.post(discord_webhook_url, json=data)
-
 
 def check_and_notify(symbol , df_15, df_4h, id, token, discordUrl):
     sendable = True
@@ -278,35 +277,137 @@ def send_notify(message, id, token, discordUrl):
     except Exception as e:
         print(f"Discord 機器人無法傳送{symbol}, 錯誤訊息：{e}")
 
-# 输入时间段
-def get_input_time_period():
-    start_date_str = input("请输入开始日期 (格式: YYYY-MM-DD): ")
-    end_date_str = input("请输入结束日期 (格式: YYYY-MM-DD): ")
-    start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-    end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
-    return start_date, end_date
+def min_task():
+    while True:    
+        current_minute = datetime.now().minute
+        if current_minute in [0,15,30,45]:
+            print("開始搜尋, " + datetime.now().strftime('%Y_%m_%d %H:%M:%S'))
+            for symbol in all_contract_symbols:
+                if symbol in dontTrackSymbol:
+                    continue
+                try:
+                    #插針與爆量
+                    data = get_binance_klines_with_rate_limit(symbol, '15m', 150)
+                    df_15 = pd.DataFrame(data, columns=[
+                        'timestamp', 'open', 'high', 'low', 'close', 'volume', 
+                        'close_time', 'quote_asset_volume', 'number_of_trades', 
+                        'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
+                    ])
 
-def check_recentLow():
-    print()
+                    df_15['high'] = df_15['high'].astype(float)
+                    df_15['low'] = df_15['low'].astype(float)
+                    df_15['close'] = df_15['close'].astype(float)
+                    df_15['open'] = df_15['open'].astype(float)
 
-def Test(symbol):
-    data_4h = get_binance_klines_with_rate_limit(symbol, '4h', 150)
-    df_4h = pd.DataFrame(data_4h, columns=[
-        'timestamp', 'open', 'high', 'low', 'close', 'volume', 
-        'close_time', 'quote_asset_volume', 'number_of_trades', 
-        'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
-    ])                
+                    df_15['timestamp'] = pd.to_datetime(df_15['timestamp'], unit='ms')
+
+                    calculate_atr_ema(symbol, df_15)
+
+                    df_15 = calculate_volume_sma(df_15, 45)
+                    df_15 = calculate_sma(df_15, 30)
+                    df_15 = calculate_sma(df_15, 45)
+                    df_15 = calculate_sma(df_15, 60)
+
+                    send_long =  check_vol_kline(symbol, df_15, True)
+                    send_short =  check_vol_kline(symbol, df_15, False)
+
+                #均線
+                    if send_long or send_short:
+                        data_4h = get_binance_klines_with_rate_limit(symbol, '4h', 150)
+                        df_4h = pd.DataFrame(data_4h, columns=[
+                            'timestamp', 'open', 'high', 'low', 'close', 'volume', 
+                            'close_time', 'quote_asset_volume', 'number_of_trades', 
+                            'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
+                        ])                
                 
-    df_4h = calculate_sma(df_4h, 30)
-    df_4h = calculate_sma(df_4h, 60)
-    df_4h = calculate_sma(df_4h, 90)
-    one = True
-    one = one and check_sma_long(symbol, df_4h)
-    two = True
-    two = two and check_sma_short(symbol, df_4h)
-    print(one)
-    print(two)
+                        df_4h = calculate_sma(df_4h, 30)
+                        df_4h = calculate_sma(df_4h, 60)
+                        df_4h = calculate_sma(df_4h, 90)
 
+                        if send_long:
+                            send_long = send_long and check_sma_long(symbol, df_4h)
+                        elif send_short:
+                            send_short = send_short and check_sma_short(symbol, df_4h)
+                        else:
+                            print("壞去惹 QQ")
+                    
+                        if send_long:
+                            send_notify(f"{symbol} : 15m 爆量、插針、4h 多頭 (做多摟！)", chat_id, telegram_token, discord_webhook_url)
+                        if send_short:
+                            send_notify(f"{symbol} : 15m 爆量、插針、4h 空頭 (做空瞜！)", chat_id, telegram_token, discord_webhook_url)
+                
+                except Exception as e:
+                    print(f"Error processing {symbol}: {e}")        
+            print("15m 一輪結束, 時間：" + datetime.now().strftime('%Y_%m_%d %H:%M:%S'))
+            print("\n")
+            time.sleep(60) #結束後延長一分鐘才繼續檢查，避免同一分鐘檢查太多次   
+    
+def hour_task():
+    while True:    
+        current_hour = datetime.now().hour
+        if current_minute in [0,15,30,45]:
+            print("開始搜尋, " + datetime.now().strftime('%Y_%m_%d %H:%M:%S'))
+            for symbol in all_contract_symbols:
+                if symbol in dontTrackSymbol:
+                    continue
+                try:
+                    #插針與爆量
+                    data = get_binance_klines_with_rate_limit(symbol, '15m', 150)
+                    df_15 = pd.DataFrame(data, columns=[
+                        'timestamp', 'open', 'high', 'low', 'close', 'volume', 
+                        'close_time', 'quote_asset_volume', 'number_of_trades', 
+                        'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
+                    ])
+
+                    df_15['high'] = df_15['high'].astype(float)
+                    df_15['low'] = df_15['low'].astype(float)
+                    df_15['close'] = df_15['close'].astype(float)
+                    df_15['open'] = df_15['open'].astype(float)
+
+                    df_15['timestamp'] = pd.to_datetime(df_15['timestamp'], unit='ms')
+
+                    calculate_atr_ema(symbol, df_15)
+
+                    df_15 = calculate_volume_sma(df_15, 45)
+                    df_15 = calculate_sma(df_15, 30)
+                    df_15 = calculate_sma(df_15, 45)
+                    df_15 = calculate_sma(df_15, 60)
+
+                    send_long =  check_vol_kline(symbol, df_15, True)
+                    send_short =  check_vol_kline(symbol, df_15, False)
+
+                #均線
+                    if send_long or send_short:
+                        data_4h = get_binance_klines_with_rate_limit(symbol, '4h', 150)
+                        df_4h = pd.DataFrame(data_4h, columns=[
+                            'timestamp', 'open', 'high', 'low', 'close', 'volume', 
+                            'close_time', 'quote_asset_volume', 'number_of_trades', 
+                            'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
+                        ])                
+                
+                        df_4h = calculate_sma(df_4h, 30)
+                        df_4h = calculate_sma(df_4h, 60)
+                        df_4h = calculate_sma(df_4h, 90)
+
+                        if send_long:
+                            send_long = send_long and check_sma_long(symbol, df_4h)
+                        elif send_short:
+                            send_short = send_short and check_sma_short(symbol, df_4h)
+                        else:
+                            print("壞去惹 QQ")
+                    
+                        if send_long:
+                            send_notify(f"{symbol} : 15m 爆量、插針、4h 多頭 (做多摟！)", chat_id, telegram_token, discord_webhook_url)
+                        if send_short:
+                            send_notify(f"{symbol} : 15m 爆量、插針、4h 空頭 (做空瞜！)", chat_id, telegram_token, discord_webhook_url)
+                
+                except Exception as e:
+                    print(f"Error processing {symbol}: {e}")        
+            print("15m 一輪結束, 時間：" + datetime.now().strftime('%Y_%m_%d %H:%M:%S'))
+            print("\n")
+            time.sleep(60) #結束後延長一分鐘才繼續檢查，避免同一分鐘檢查太多次   
+def four_hour_task():
+    print()
 #main info
 telegram_token = "6519297911:AAH-cGmGvF6wh0Gb-55sBBhB0Hi8W6j3U0c"
 chat_id = "1188913547"
@@ -316,15 +417,12 @@ all_contract_symbols = get_all_contract_symbols()
 #print(f"所有合約幣種: {all_contract_symbols}")
 #[0,5,10,15,20,25,30,35,40,45,50,55]:
 print("開始執行...")
-'''ans_1 = input("是否檢查最近漲跌？(y/n)")
-if ans_1 == "Y" or ans_1 == "y":
-    check_recentLow()
-
-else:
-    print("開始重複執行K線提醒...")'''
-#Test('TNSRUSDT')
 dontTrackSymbol = ["USDCUSDT", "BTCSTUSDT"]
+last_hour = -1
+last_minute = -1
+last_four_hour = -1
 while True:
+    current_hour = datetime.now().hour
     current_minute = datetime.now().minute
     if current_minute in [0,15,30,45]:
         print("開始搜尋, " + datetime.now().strftime('%Y_%m_%d %H:%M:%S'))
@@ -387,6 +485,40 @@ while True:
         print("一輪結束, 時間：" + datetime.now().strftime('%Y_%m_%d %H:%M:%S'))
         print("\n")
         time.sleep(60) #結束後延長一分鐘才繼續檢查，避免同一分鐘檢查太多次    
+    elif last_hour != current_hour:
+        last_four_hour = current_hour
+        for symbol in all_contract_symbols:
+                if symbol in dontTrackSymbol:
+                    continue
+                try:
+                    print(f"Error processing {symbol}: {e}")     
+                    #插針與爆量
+                    data = get_binance_klines_with_rate_limit(symbol, '1h', 150)
+                    df_1h = pd.DataFrame(data, columns=[
+                        'timestamp', 'open', 'high', 'low', 'close', 'volume', 
+                        'close_time', 'quote_asset_volume', 'number_of_trades', 
+                        'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
+                    ])
+                except Exception as e:
+                    print("") 
+    elif current_hour in [0,4,8,12,16,20]:
+        if last_four_hour != current_hour:
+            last_four_hour = current_hour
+            for symbol in all_contract_symbols:
+                if symbol in dontTrackSymbol:
+                    continue
+                try:
+                    print(f"Error processing {symbol}: {e}")     
+                    #插針與爆量
+                    data = get_binance_klines_with_rate_limit(symbol, '4h', 150)
+                    df_4h = pd.DataFrame(data, columns=[
+                        'timestamp', 'open', 'high', 'low', 'close', 'volume', 
+                        'close_time', 'quote_asset_volume', 'number_of_trades', 
+                        'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
+                    ])
+                except Exception as e:
+                    print("") 
+        print("") 
     else:
         time.sleep(15)
         print('\033[A%s %s' % ("重新比對時間: ",datetime.now().strftime('%Y_%m_%d %H:%M:%S')))
