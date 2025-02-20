@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import ta
 import time
-import threading
 from datetime import datetime
 
 import ta.trend
@@ -280,7 +279,7 @@ def send_notify(message, id, token, discordUrl):
 def min_task():
     while True:    
         current_minute = datetime.now().minute
-        if current_minute in [0,15,30,45]:
+        if current_minute in [0,15,30,45,29,28,27]:
             print("開始搜尋, " + datetime.now().strftime('%Y_%m_%d %H:%M:%S'))
             for symbol in all_contract_symbols:
                 if symbol in dontTrackSymbol:
@@ -288,59 +287,12 @@ def min_task():
                 try:
                     #插針與爆量
                     data = get_binance_klines_with_rate_limit(symbol, '15m', 150)
-                    df_15 = pd.DataFrame(data, columns=[
-                        'timestamp', 'open', 'high', 'low', 'close', 'volume', 
-                        'close_time', 'quote_asset_volume', 'number_of_trades', 
-                        'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
-                    ])
-
-                    df_15['high'] = df_15['high'].astype(float)
-                    df_15['low'] = df_15['low'].astype(float)
-                    df_15['close'] = df_15['close'].astype(float)
-                    df_15['open'] = df_15['open'].astype(float)
-
-                    df_15['timestamp'] = pd.to_datetime(df_15['timestamp'], unit='ms')
-
-                    calculate_atr_ema(symbol, df_15)
-
-                    df_15 = calculate_volume_sma(df_15, 45)
-                    df_15 = calculate_sma(df_15, 30)
-                    df_15 = calculate_sma(df_15, 45)
-                    df_15 = calculate_sma(df_15, 60)
-
-                    send_long =  check_vol_kline(symbol, df_15, True)
-                    send_short =  check_vol_kline(symbol, df_15, False)
-
-                #均線
-                    if send_long or send_short:
-                        data_4h = get_binance_klines_with_rate_limit(symbol, '4h', 150)
-                        df_4h = pd.DataFrame(data_4h, columns=[
-                            'timestamp', 'open', 'high', 'low', 'close', 'volume', 
-                            'close_time', 'quote_asset_volume', 'number_of_trades', 
-                            'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
-                        ])                
-                
-                        df_4h = calculate_sma(df_4h, 30)
-                        df_4h = calculate_sma(df_4h, 60)
-                        df_4h = calculate_sma(df_4h, 90)
-
-                        if send_long:
-                            send_long = send_long and check_sma_long(symbol, df_4h)
-                        elif send_short:
-                            send_short = send_short and check_sma_short(symbol, df_4h)
-                        else:
-                            print("壞去惹 QQ")
-                    
-                        if send_long:
-                            send_notify(f"{symbol} : 15m 爆量、插針、4h 多頭 (做多摟！)", chat_id, telegram_token, discord_webhook_url)
-                        if send_short:
-                            send_notify(f"{symbol} : 15m 爆量、插針、4h 空頭 (做空瞜！)", chat_id, telegram_token, discord_webhook_url)
-                
+                    checking_process(symbol, data)
                 except Exception as e:
                     print(f"Error processing {symbol}: {e}")        
             print("15m 一輪結束, 時間：" + datetime.now().strftime('%Y_%m_%d %H:%M:%S'))
             print("\n")
-            time.sleep(60) #結束後延長一分鐘才繼續檢查，避免同一分鐘檢查太多次   
+        time.sleep(60) #結束後延長一分鐘才繼續檢查，避免同一分鐘檢查太多次   
     
 def hour_task():
     while True:    
@@ -408,6 +360,52 @@ def hour_task():
             time.sleep(60) #結束後延長一分鐘才繼續檢查，避免同一分鐘檢查太多次   
 def four_hour_task():
     print()
+
+
+def checking_process(symbol, data):
+    #data = get_binance_klines_with_rate_limit(symbol, '15m', 150)
+    df = pd.DataFrame(data, columns=[
+        'timestamp', 'open', 'high', 'low', 'close', 'volume', 
+        'close_time', 'quote_asset_volume', 'number_of_trades', 
+        'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
+    ])                
+
+    df['high'] = df['high'].astype(float)
+    df['low'] = df['low'].astype(float)
+    df['close'] = df['close'].astype(float)
+    df['open'] = df['open'].astype(float)                   
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+
+    calculate_atr_ema(symbol, df)
+
+    df = calculate_volume_sma(df, 45)
+    df = calculate_sma(df, 30)
+    df = calculate_sma(df, 45)
+    df = calculate_sma(df, 60)
+
+    send_long =  check_vol_kline(symbol, df, True)
+    send_short =  check_vol_kline(symbol, df, False)
+
+                #均線
+    if send_long or send_short:             
+
+        #16倍就是4H的均線        
+        df = calculate_sma(df, 30 * 16)
+        df = calculate_sma(df, 60 * 16)
+        df = calculate_sma(df, 90 * 16)
+
+        if send_long:
+            send_long = send_long and check_sma_long(symbol, df)
+        elif send_short:
+            send_short = send_short and check_sma_short(symbol, df)
+        else:
+            print("壞去惹 QQ")
+                    
+        if send_long:
+            send_notify(f"{symbol} : 15m 爆量、插針、4h 多頭 (做多摟！)", chat_id, telegram_token, discord_webhook_url)
+        if send_short:
+            send_notify(f"{symbol} : 15m 爆量、插針、4h 空頭 (做空瞜！)", chat_id, telegram_token, discord_webhook_url)
+
 #main info
 telegram_token = "6519297911:AAH-cGmGvF6wh0Gb-55sBBhB0Hi8W6j3U0c"
 chat_id = "1188913547"
@@ -421,7 +419,11 @@ dontTrackSymbol = ["USDCUSDT", "BTCSTUSDT"]
 last_hour = -1
 last_minute = -1
 last_four_hour = -1
-while True:
+
+min_task()
+
+
+'''while True:
     current_hour = datetime.now().hour
     current_minute = datetime.now().minute
     if current_minute in [0,15,30,45]:
@@ -521,4 +523,4 @@ while True:
         print("") 
     else:
         time.sleep(15)
-        print('\033[A%s %s' % ("重新比對時間: ",datetime.now().strftime('%Y_%m_%d %H:%M:%S')))
+        print('\033[A%s %s' % ("重新比對時間: ",datetime.now().strftime('%Y_%m_%d %H:%M:%S')))'''
