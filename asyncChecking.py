@@ -174,8 +174,10 @@ async def process_symbol(symbol, check_15m, check_1h, check_4h, current_4h_trend
         # 發送通知
         if exploded_timeframes:
             message = f"{symbol} 爆量：{', '.join(exploded_timeframes)}{trend_text}"
-            await send_message_notify(message, chat_id, telegram_token, discord_webhook_url)
+            return message
+            #await send_message_notify(message, chat_id, telegram_token, discord_webhook_url)
 
+        return None
     except Exception as e:
         print(f"Error processing {symbol}: {e}")
 
@@ -264,7 +266,14 @@ async def main():
                 )
                 for symbol in all_contract_symbols if symbol not in dontTrackSymbol
             ]
-            await asyncio.gather(*tasks)
+
+            results = await asyncio.gather(*tasks)
+            messages_to_notify = [msg for msg in results if msg]
+            if messages_to_notify:
+                notify_text = "\n".join(messages_to_notify)
+                await send_message_notify(notify_text, chat_id, telegram_token, discord_webhook_url)
+
+            #await asyncio.gather(*tasks)
 
         await asyncio.sleep(60)  # [改動] 避免頻繁檢查
         

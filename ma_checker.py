@@ -119,8 +119,15 @@ def function_one():
         else :
             data_transform_2(symbol, timeframe, next_time_frame, ma_short, ma_medium, ma_long)
 
+    output_lines = []
     for s in selected_symbols:
-        print(s + "符合條件")
+        line = f"BINANCE:{s}.P"
+        print(line + " 符合條件")
+        output_lines.append(line)
+    
+    with open("tradingview_list.txt", "w") as f:
+        f.write("\n".join(output_lines))
+    print("已匯出成 tradingview_list.txt")
 
 def function_two():
     timeframe = input('輸入時間')  # 1小時K線
