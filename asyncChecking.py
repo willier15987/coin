@@ -4,8 +4,9 @@ import pandas as pd
 import ta
 import time
 from datetime import datetime, UTC
-
 import ta.trend
+import messageSender
+import dataPrefix
 
 # 儲存最近一次的 SMA 多頭排列結果（symbol 對應 True/False）
 last_sma_check_4h = {}
@@ -47,7 +48,7 @@ async def get_binance_klines_with_rate_limit(symbol, interval, limit=500):
             return await response.json()
 
 # 非同步發送 Telegram 訊息
-async def send_telegram_message(chat_id, message, token):
+'''async def send_telegram_message(chat_id, message, token):
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     data = {"chat_id": chat_id, "text": message}
     async with aiohttp.ClientSession() as session:
@@ -90,7 +91,7 @@ async def send_message_notify(message, chat_id, telegram_token, discord_webhook_
     await asyncio.gather(
         send_telegram_message(chat_id, message, telegram_token),
         send_discord_message(discord_webhook_url, message)
-    )
+    )'''
 
 # 計算均線 (SMA)
 def calculate_sma(df, length):
@@ -117,45 +118,47 @@ def check_sma(df, lengths):
     # 檢查是否為遞減（短期 > 長期）
     return all(x > y for x, y in zip(last_values, last_values[1:]))
 
-async def process_symbol(symbol, check_15m, check_1h, check_4h, current_4h_trend, current_1d_trend, cached_4h_data, chat_id, telegram_token, discord_webhook_url):
+async def process_symbol(symbol, check_15m, check_1h, check_4h, current_4h_trend, current_1d_trend, cached_4h_data):
     try:
         exploded_timeframes = []  # 用來儲存爆量的週期
 
         # --- 15m ---
         if check_15m:
-            data_15m = await get_binance_klines_with_rate_limit(symbol, '15m', 150)
+            '''data_15m = await get_binance_klines_with_rate_limit(symbol, '15m', 150)
             df_15 = pd.DataFrame(data_15m, columns=BINANCE_COLUMNS)
             df_15[['open', 'high', 'low', 'close', 'volume']] = df_15[['open', 'high', 'low', 'close', 'volume']].astype(float)
             df_15['timestamp'] = pd.to_datetime(df_15['timestamp'], unit='ms')
-            df_15 = calculate_volume_sma(df_15, 45)
-
+            df_15 = calculate_volume_sma(df_15, 45)'''
+            df_15 = await dataPrefix.get_data_after_fix(symbol, '15m')
             if df_15['volume'].iloc[-2] > df_15['vol_sma_45'].iloc[-2] * 5:
                 volue = "{:.1%}".format((df_15['close'].iloc[-2] - df_15['open'].iloc[-2]) / df_15['open'].iloc[-2])
                 exploded_timeframes.append(f"15m({volue})")
 
         # --- 1h ---
         if check_1h:
-            data_1h = await get_binance_klines_with_rate_limit(symbol, '1h', 150)
+            '''data_1h = await get_binance_klines_with_rate_limit(symbol, '1h', 150)
             df_1h = pd.DataFrame(data_1h, columns=BINANCE_COLUMNS)
             df_1h[['open', 'high', 'low', 'close', 'volume']] = df_1h[['open', 'high', 'low', 'close', 'volume']].astype(float)
             df_1h['timestamp'] = pd.to_datetime(df_1h['timestamp'], unit='ms')
-            df_1h = calculate_volume_sma(df_1h, 45)
+            df_1h = calculate_volume_sma(df_1h, 45)'''
 
+            df_1h = await dataPrefix.get_data_after_fix(symbol, '1h')
             if df_1h['volume'].iloc[-2] > df_1h['vol_sma_45'].iloc[-2] * 5:
                 volue = "{:.1%}".format((df_1h['close'].iloc[-2] - df_1h['open'].iloc[-2]) / df_1h['open'].iloc[-2])
                 exploded_timeframes.append(f"1h({volue})")
 
         # --- 4h ---
         if check_4h:
-            if symbol in cached_4h_data:
+            '''if symbol in cached_4h_data:
                 data_4h = cached_4h_data[symbol]
             else:
                 data_4h = await get_binance_klines_with_rate_limit(symbol, '4h', 150)
             df_4h = pd.DataFrame(data_4h, columns=BINANCE_COLUMNS)
             df_4h[['open', 'high', 'low', 'close', 'volume']] = df_4h[['open', 'high', 'low', 'close', 'volume']].astype(float)
             df_4h['timestamp'] = pd.to_datetime(df_4h['timestamp'], unit='ms')
-            df_4h = calculate_volume_sma(df_4h, 45)
+            df_4h = calculate_volume_sma(df_4h, 45)'''
 
+            df_4h = await dataPrefix.get_data_after_fix(symbol, '4h')
             if df_4h['volume'].iloc[-2] > df_4h['vol_sma_45'].iloc[-2] * 5:
                 volue = "{:.1%}".format((df_4h['close'].iloc[-2] - df_4h['open'].iloc[-2]) / df_4h['open'].iloc[-2])
                 exploded_timeframes.append(f"4h({volue})")
@@ -184,9 +187,6 @@ async def process_symbol(symbol, check_15m, check_1h, check_4h, current_4h_trend
 # 主函數，每 15 分鐘執行一次
 async def main():
     global need_checked_4h, need_checked_1d
-    telegram_token = "6519297911:AAH-cGmGvF6wh0Gb-55sBBhB0Hi8W6j3U0c"
-    chat_id = "1188913547"
-    discord_webhook_url = "https://discord.com/api/webhooks/1242331878053253142/uK3gJYARjx_Js8zN0n5LZa7vXzSziQGDGxGVxyYX-QDMZUUbGXeQjHGi9zoD9OUTnhP6"  
     all_contract_symbols = await get_all_contract_symbols()
     dontTrackSymbol = ["USDCUSDT", "BTCSTUSDT"]
 
@@ -260,9 +260,6 @@ async def main():
                     last_sma_check_4h,
                     last_sma_check_1d,
                     cached_4h_data,
-                    chat_id,
-                    telegram_token,
-                    discord_webhook_url
                 )
                 for symbol in all_contract_symbols if symbol not in dontTrackSymbol
             ]
@@ -271,7 +268,7 @@ async def main():
             messages_to_notify = [msg for msg in results if msg]
             if messages_to_notify:
                 notify_text = "\n".join(messages_to_notify)
-                await send_message_notify(notify_text, chat_id, telegram_token, discord_webhook_url)
+                await messageSender.send_message_notify(notify_text)
 
             #await asyncio.gather(*tasks)
 
