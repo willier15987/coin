@@ -198,7 +198,7 @@ async def main():
         minute = now.minute
         hour = now.hour
 
-        check_15m = (minute % 15 == 0)
+        check_15m = (minute % 5 == 0)
         check_1h = (minute == 0)
         check_4h_volume = (minute == 0 and hour % 4 == 0)
 

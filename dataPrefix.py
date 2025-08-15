@@ -26,20 +26,20 @@ async def get_binance_klines_with_rate_limit(symbol: str, interval: str, limit: 
     """
     Fetch klines with basic rate-limit awareness (using X-MBX-USED-WEIGHT-1M header)
     """
-    url = "https://fapi.binance.com/fapi/v1/klines"
+    url = f"https://fapi.binance.com/fapi/v1/klines"
     params = {'symbol': symbol, 'interval': interval, 'limit': limit}
+    
     async with aiohttp.ClientSession() as session:
         async with session.get(url, params=params) as response:
             headers = response.headers
-        try:
             used_weight = int(headers.get('X-MBX-USED-WEIGHT-1M', 0))
-        except (TypeError, ValueError):
-            used_weight = 0
-        remaining_weight = 1200 - used_weight
-        if remaining_weight < 10:
-            print(f"{symbol}, Rate limit approaching. Sleeping 60s.")
-            await asyncio.sleep(60)
-        return await response.json()
+            remaining_weight = 1200 - used_weight
+
+            if remaining_weight < 10:  # [改動] 根據剩餘 API 速率動態等待
+                print(f"{symbol}, Rate limit reached. Waiting for reset.")
+                await asyncio.sleep(60)  
+
+            return await response.json()
     
     
 
@@ -67,3 +67,5 @@ async def get_data_after_fix(symbol: str, interval: str):
     datafram[['open', 'high', 'low', 'close', 'volume']] = datafram[['open', 'high', 'low', 'close', 'volume']].astype(float)
     datafram['timestamp'] = pd.to_datetime(datafram['timestamp'], unit='ms')
     datafram = calculate_volume_sma(datafram, 45)
+
+    return datafram
